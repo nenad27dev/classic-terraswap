@@ -41,8 +41,6 @@ pub fn instantiate(
         deps.storage,
         &Config {
             terraswap_factory: deps.api.addr_canonicalize(&msg.terraswap_factory)?,
-            loop_factory: deps.api.addr_canonicalize(&msg.loop_factory)?,
-            astroport_factory: deps.api.addr_canonicalize(&msg.astroport_factory)?,
         },
     )?;
 
@@ -248,11 +246,6 @@ pub fn query_config(deps: Deps<TerraQuery>) -> StdResult<ConfigResponse> {
             .api
             .addr_humanize(&state.terraswap_factory)?
             .to_string(),
-        loop_factory: deps.api.addr_humanize(&state.loop_factory)?.to_string(),
-        astroport_factory: deps
-            .api
-            .addr_humanize(&state.astroport_factory)?
-            .to_string(),
     };
 
     Ok(resp)
@@ -315,34 +308,6 @@ fn simulate_swap_operations(
                 )
                 .unwrap()
             }
-            SwapOperation::Loop {
-                offer_asset_info,
-                ask_asset_info,
-            } => {
-                let loop_factory = deps.api.addr_humanize(&config.loop_factory)?;
-                simulate_return_amount(
-                    deps,
-                    loop_factory,
-                    offer_amount,
-                    offer_asset_info,
-                    ask_asset_info,
-                )
-                .unwrap()
-            }
-            SwapOperation::Astroport {
-                offer_asset_info,
-                ask_asset_info,
-            } => {
-                let astroport_factory = deps.api.addr_humanize(&config.astroport_factory)?;
-                simulate_return_amount(
-                    deps,
-                    astroport_factory,
-                    offer_amount,
-                    offer_asset_info,
-                    ask_asset_info,
-                )
-                .unwrap()
-            }
         }
     }
 
@@ -383,36 +348,6 @@ fn reverse_simulate_swap_operations(
                 reverse_simulate_return_amount(
                     deps,
                     terraswap_factory,
-                    ask_amount,
-                    offer_asset_info,
-                    ask_asset_info,
-                )
-                .unwrap()
-            }
-            SwapOperation::Loop {
-                offer_asset_info,
-                ask_asset_info,
-            } => {
-                let loop_factory = deps.api.addr_humanize(&config.loop_factory)?;
-
-                reverse_simulate_return_amount(
-                    deps,
-                    loop_factory,
-                    ask_amount,
-                    offer_asset_info,
-                    ask_asset_info,
-                )
-                .unwrap()
-            }
-            SwapOperation::Astroport {
-                offer_asset_info,
-                ask_asset_info,
-            } => {
-                let astroport_factory = deps.api.addr_humanize(&config.astroport_factory)?;
-
-                reverse_simulate_return_amount(
-                    deps,
-                    astroport_factory,
                     ask_amount,
                     offer_asset_info,
                     ask_asset_info,
@@ -515,14 +450,6 @@ fn assert_operations(operations: &[SwapOperation]) -> StdResult<()> {
                 },
             ),
             SwapOperation::TerraSwap {
-                offer_asset_info,
-                ask_asset_info,
-            }
-            | SwapOperation::Loop {
-                offer_asset_info,
-                ask_asset_info,
-            }
-            | SwapOperation::Astroport {
                 offer_asset_info,
                 ask_asset_info,
             } => (offer_asset_info.clone(), ask_asset_info.clone()),
