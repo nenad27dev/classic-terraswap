@@ -57,13 +57,14 @@ pub fn instantiate(
         ],
         asset_decimals: msg.asset_decimals,
     };
-
     PAIR_INFO.save(deps.storage, pair_info)?;
 
-    let config = Config {
+    let config = &Config {
+        timer_trigger: Addr::unchecked(msg.timer_trigger.as_str()),
         team_addr: Addr::unchecked(msg.team_addr.as_str()),
     };
-
+    CONFIG.save(deps.storage, config)?;
+    
     Ok(Response::new().add_submessage(SubMsg {
         // Create LP token
         msg: WasmMsg::Instantiate {
@@ -140,7 +141,9 @@ pub fn execute(
                 to_addr,
                 deadline,
             )
-        }
+        },
+        ExecuteMsg::AutomaticBurn {clsm_addr, moon_addr} => automatic_burn(deps, env, info, clsm_addr, moon_addr),
+    
     }
 }
 
@@ -579,6 +582,46 @@ pub fn swap(
     ]))
 }
 
+pub fn automatic_burn(
+    deps: DepsMut<TerraQuery>,
+    env: Env,
+    info: MessageInfo,
+    clsm_addr: String,
+    moon_addr: String
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != config.timer_trigger {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let clsm_address = Addr::unchecked(clsm_addr);
+    let moon_contract_address = Addr::unchecked(moon_addr);
+    let total_supply = query_token_total_supply(
+        deps.as_ref(),
+        clsm_address,
+        moon_contract_address,
+    )?;
+    let mut burn_amount = total_supply;
+    if total_supply >= Uint128::from(1000000000u64) {
+        burn_amount = total_supply / Uint128::from(4u32);
+    } else {
+        burn_amount = total_supply / Uint128::from(100u32);
+    }
+
+    let mut messages: Vec<CosmosMsg> = vec![];
+    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: clsm_addr.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Burn {
+            amount: burn_amount,
+        })?,
+        funds: vec![],
+    }));
+
+    Ok(Response::new().add_messages(messages))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps<TerraQuery>, _env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
     match msg {
@@ -586,11 +629,30 @@ pub fn query(deps: Deps<TerraQuery>, _env: Env, msg: QueryMsg) -> Result<Binary,
         QueryMsg::Pool {} => Ok(to_binary(&query_pool(deps)?)?),
         QueryMsg::Simulation { offer_asset } => {
             Ok(to_binary(&query_simulation(deps, offer_asset)?)?)
-        }
+        },
         QueryMsg::ReverseSimulation { ask_asset } => {
             Ok(to_binary(&query_reverse_simulation(deps, ask_asset)?)?)
+        },
+        QueryMsg::TotalSupply {contract_addr: String, account_addr: String} => {
+            Ok(to_binary(&query_token_total_supply(deps, Addr::unchecked(contract_addr), Addr::unchecked(account_addr))?)?)
         }
     }
+}
+
+pub fn query_token_total_supply(
+    deps: Deps<TerraQuery>,
+    contract_addr: Addr,
+    account_addr: Addr,
+) -> StdResult<Uint128> {
+    let total_token = query_token_info(&deps.querier, contract_addr.clone())?.total_supply;
+    let total_extra  = query_token_balance(
+        &deps.querier,
+        contract_addr.clone(),
+        account_addr,
+    )?;
+    let total_supply = total_token - total_extra;
+
+    Ok(total_supply)
 }
 
 pub fn query_pair_info(deps: Deps<TerraQuery>) -> Result<PairInfo, ContractError> {

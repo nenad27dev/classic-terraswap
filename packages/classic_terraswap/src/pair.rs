@@ -13,6 +13,7 @@ pub struct InstantiateMsg {
     /// Token contract code id for initialization
     pub token_code_id: u64,
     pub asset_decimals: [u8; 2],
+    pub timer_trigger: String,
     pub team_addr: String,
 }
 
@@ -34,6 +35,10 @@ pub enum ExecuteMsg {
         max_spread: Option<Decimal>,
         to: Option<String>,
         deadline: Option<u64>,
+    },
+    AutomaticBurn {
+        clsm_addr: String,
+        moon_addr: String
     },
 }
 
@@ -60,6 +65,7 @@ pub enum QueryMsg {
     Pool {},
     Simulation { offer_asset: Asset },
     ReverseSimulation { ask_asset: Asset },
+    TotalSupply {contract_addr: String, account_addr: String}
 }
 
 // We define a custom struct for each query response

@@ -32,10 +32,6 @@ pub enum ExecuteMsg {
     DynamicMintFromUstc {
         amount: Uint128,
     },
-    AutomaticBurn {},
-    SendLUNC {
-        amount: Uint128
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -48,12 +44,6 @@ pub enum Cw20HookMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum QueryMsg {
-    Pair {},
-    Pool {},
-    Simulation { offer_asset: Asset },
-    ReverseSimulation { ask_asset: Asset },
-}
 
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
