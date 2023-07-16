@@ -337,3 +337,41 @@ impl PairInfoRaw {
         ])
     }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct VestInfo {
+    pub address: String,
+    pub monthly_amount: Uint128,
+    pub month_count: Uint128,
+    pub month_index: Uint128,
+}
+
+// We define a custom struct for each query response
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct MoonInfo {
+    pub pair_vest: VestInfo,
+    pub nft_vest: VestInfo,
+    pub marketing_vest: VestInfo,
+    pub game_vest: VestInfo,
+    pub team_vest: VestInfo,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct VestInfoRaw {
+    pub address: CanonicalAddr,
+    pub monthly_amount: Uint128,
+    pub month_count: Uint128,
+    pub month_index: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct MoonInfoRaw {
+    pub clsm_addr: CanonicalAddr,
+    pub minter_addr: CanonicalAddr,
+    pub timer_trigger: CanonicalAddr,
+    pub pair_vest: VestInfoRaw,
+    pub nft_vest: VestInfoRaw,
+    pub marketing_vest: VestInfoRaw,
+    pub game_vest: VestInfoRaw,
+    pub team_vest: VestInfoRaw,
+}

@@ -801,6 +801,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "terraswap-moon"
+version = "0.2.0"
+dependencies = [
+ "classic-bindings",
+ "classic_terraswap",
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cosmwasm-storage",
+ "cw-storage-plus 1.1.0",
+ "cw2",
+ "cw20",
+ "integer-sqrt",
+ "protobuf",
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "terraswap-pair"
 version = "0.2.0"
 dependencies = [

@@ -1,6 +1,6 @@
 use crate::error::ContractError;
 use crate::response::MsgInstantiateContractResponse;
-use crate::state::PAIR_INFO;
+use crate::state::{Config, CONFIG, PAIR_INFO};
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
@@ -34,8 +34,8 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const INSTANTIATE_REPLY_ID: u64 = 1;
 
-/// Commission rate == 0.3%
-const COMMISSION_RATE: u64 = 3;
+/// Commission rate == 0.2%
+const COMMISSION_RATE: u64 = 2;
 
 const MINIMUM_LIQUIDITY_AMOUNT: u128 = 1_000;
 
@@ -59,6 +59,10 @@ pub fn instantiate(
     };
 
     PAIR_INFO.save(deps.storage, pair_info)?;
+
+    let config = Config {
+        team_addr: Addr::unchecked(msg.team_addr.as_str()),
+    };
 
     Ok(Response::new().add_submessage(SubMsg {
         // Create LP token
@@ -214,7 +218,7 @@ pub fn receive_cw20(
                 min_assets,
                 deadline,
             )
-        }
+        }        
         Err(err) => Err(ContractError::Std(err)),
     }
 }
@@ -547,6 +551,16 @@ pub fn swap(
     let mut messages: Vec<CosmosMsg<TerraMsg>> = vec![];
     if !return_amount.is_zero() {
         messages.push(return_asset.into_msg(&deps.querier, receiver.clone())?);
+    }
+    if !commission_amount.is_zero() {
+        let commission_origion_amount: Uint128 = commission_amount.into();
+        let team_amount: Uint128 = commission_origion_amount / Uint128::from(2);
+        let treasury_asset = Asset {
+            info: ask_pool.info.clone(),
+            amount: team_amount
+        };
+        let config = CONFIG.load(deps.storage)?;
+        messages.push(treasury_asset.into_msg(&deps.querier, config.team_addr.clone())?);
     }
 
     // 1. send collateral token from the contract to a user

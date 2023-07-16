@@ -151,6 +151,7 @@ pub fn execute_create_pair(
     ];
 
     let asset_decimals = [asset_1_decimal, asset_2_decimal];
+    let team_addr = info.sender.to_string();
 
     let pair_key = pair_key(&raw_infos);
     if let Ok(Some(_)) = PAIRS.may_load(deps.storage, &pair_key) {
@@ -184,6 +185,7 @@ pub fn execute_create_pair(
                     asset_infos,
                     token_code_id: config.token_code_id,
                     asset_decimals,
+                    team_addr,
                 })?,
             }),
             reply_on: ReplyOn::Success,

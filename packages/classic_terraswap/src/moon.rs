@@ -1,55 +1,48 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::asset::{Asset, AssetInfo};
+use crate::asset::{Asset, AssetInfo, VestInfo};
 
 use cosmwasm_std::{Decimal, Uint128};
 use cw20::Cw20ReceiveMsg;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct InstantiateMsg {
-    /// Asset infos
-    pub asset_infos: [AssetInfo; 2],
-    /// Token contract code id for initialization
-    pub token_code_id: u64,
-    pub asset_decimals: [u8; 2],
-    pub team_addr: String,
+    pub clsm_addr: String,
+    pub minter_addr: String,
+    pub timer_trigger: String,
+    pub pair_vest: VestInfo,
+    pub nft_vest: VestInfo,
+    pub marketing_vest: VestInfo,
+    pub game_vest: VestInfo,
+    pub team_vest: VestInfo,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Receive(Cw20ReceiveMsg),
-    /// ProvideLiquidity a user provides pool liquidity
-    ProvideLiquidity {
-        assets: [Asset; 2],
-        receiver: Option<String>,
-        deadline: Option<u64>,
-        slippage_tolerance: Option<Decimal>,
+    MintCLSMToPairContract {},
+    MintCLSMToNFTMinters {},
+    MintCLSMToMarketing {},
+    MintCLSMToMiniGames {},
+    MintCLSMToTeam {},
+    DynamicMintFromLunc {
+        amount: Uint128,
     },
-    /// Swap an offer asset to the other
-    Swap {
-        offer_asset: Asset,
-        belief_price: Option<Decimal>,
-        max_spread: Option<Decimal>,
-        to: Option<String>,
-        deadline: Option<u64>,
+    DynamicMintFromUstc {
+        amount: Uint128,
     },
+    AutomaticBurn {},
+    SendLUNC {
+        amount: Uint128
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {
-    /// Sell a given amount of asset
-    Swap {
-        belief_price: Option<Decimal>,
-        max_spread: Option<Decimal>,
-        to: Option<String>,
-        deadline: Option<u64>,
-    },
-    WithdrawLiquidity {
-        min_assets: Option<[Asset; 2]>,
-        deadline: Option<u64>,
+    SendToken {
+        amount: Uint128
     },
 }
 

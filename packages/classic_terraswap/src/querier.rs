@@ -63,6 +63,22 @@ pub fn query_token_info(
     Ok(token_info)
 }
 
+pub fn query_token_total_supply(
+    querier: &QuerierWrapper<TerraQuery>,
+    contract_addr: Addr,
+    account_addr: Addr,
+) -> StdResult<Uint128> {
+    let total_token = query_token_info(querier, contract_addr.clone())?.total_supply;
+    let total_extra  = query_token_balance(
+        querier,
+        contract_addr.clone(),
+        account_addr,
+    )?;
+    let total_supply = total_token - total_extra;
+
+    Ok(total_supply)
+}
+
 pub fn query_native_decimals(
     querier: &QuerierWrapper<TerraQuery>,
     factory_contract: Addr,

@@ -62,6 +62,7 @@ SWAP_FACTORY="terraswap_factory"
 SWAP_PAIR="terraswap_pair"
 SWAP_ROUTER="terraswap_router"
 SWAP_TOKEN="terraswap_token"
+SWAP_MOON="terraswap_moon"
 
 CreateEnv() {
     sudo apt-get update && sudo apt upgrade -y
@@ -152,8 +153,7 @@ RemoveHistory() {
 BatchUpload() {
     # CATEGORY=$SWAP_TOKEN
     # printf "y\n" | Upload
-    # sleep 3
-    
+    # sleep 3    
 
     # CATEGORY=$SWAP_PAIR
     # printf "y\n" | Upload
@@ -163,7 +163,11 @@ BatchUpload() {
     # printf "y\n" | Upload
     # sleep 3
 
-    CATEGORY=$SWAP_ROUTER
+    # CATEGORY=$SWAP_ROUTER
+    # printf "y\n" | Upload
+    # sleep 3
+
+    CATEGORY=$SWAP_MOON
     printf "y\n" | Upload
     sleep 3
 }
@@ -192,12 +196,12 @@ Instantiate() {
 
 BatchInstantiate() {
     # CATEGORY=$SWAP_TOKEN
-    # PARAM_1='{"name":"Test clsm", "symbol":"TCLSM", "decimals":6, "initial_balances":[{"address":"'$ADDR_ADMIN'", "amount":"680000000000"}], "mint":{"minter":"'$ADDR_ADMIN'"}, "marketing":{"marketing":"'$ADDR_ADMIN'","logo":{"url":"https://i.ibb.co/RTRwxfs/prism.png"}}}'
+    # PARAM_1='{"name":"Test clsm", "symbol":"TCLSM", "decimals":6, "initial_balances":[{"address":"'$ADDR_ADMIN'", "amount":"6800000000000"}], "mint":{"minter":"'$ADDR_ADMIN'"}, "marketing":{"marketing":"'$ADDR_ADMIN'","logo":{"url":"https://i.ibb.co/RTRwxfs/prism.png"}}}'
     # PARAM_2="CLSM"
     # printf "y\n" | Instantiate
     
     # CATEGORY=$SWAP_PAIR
-    # PARAM_1='{"asset_infos":[{"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, {"native_token":{"denom":"uluna"}}], "token_code_id":'$(cat $CODE_DIR$SWAP_TOKEN)', "asset_decimals":[6, 6], "owner": "'$ADDR_ADMIN'"}'
+    # PARAM_1='{"asset_infos":[{"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, {"native_token":{"denom":"uluna"}}], "token_code_id":'$(cat $CODE_DIR$SWAP_TOKEN)', "asset_decimals":[6, 6], "team_addr": "'$ADDR_ADMIN'", "owner": "'$ADDR_ADMIN'"}'
     # PARAM_2="SwapPair"
     # printf "y\n" | Instantiate
     
@@ -206,9 +210,14 @@ BatchInstantiate() {
     # PARAM_2="SwapFactory"
     # printf "y\n" | Instantiate
 
-    CATEGORY=$SWAP_ROUTER
-    PARAM_1='{"terraswap_factory": "'$(cat $ADDRESS_DIR$SWAP_FACTORY)'"}'
-    PARAM_2="SwapRouter"
+    # CATEGORY=$SWAP_ROUTER
+    # PARAM_1='{"terraswap_factory": "'$(cat $ADDRESS_DIR$SWAP_FACTORY)'"}'
+    # PARAM_2="SwapRouter"
+    # printf "y\n" | Instantiate
+
+    CATEGORY=$SWAP_MOON
+    PARAM_1='{"asset_infos":[{"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, {"native_token":{"denom":"uluna"}}], "token_code_id":'$(cat $CODE_DIR$SWAP_TOKEN)', "asset_decimals":[6, 6], "owner": "'$ADDR_ADMIN'"}'
+    PARAM_2="SwapMoon"
     printf "y\n" | Instantiate
 }
 
@@ -224,7 +233,7 @@ AddNativeTokenDecimal() {
 CreatePair1() {
     echo "================================================="
     echo "Start Create Pair"
-    PARAM_1='{"create_pair": {"asset_infos":[{"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, {"native_token":{"denom":"uluna"}}]}}'
+    PARAM_1='{"create_pair": {"assets":[{"info": {"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, "amount": "0"}, {"info": {"native_token":{"denom":"uluna"}}, "amount": "0"}]}}'
     printf "y\n" | terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_FACTORY) "$PARAM_1" $WALLET $TXFLAG
     sleep 5
     echo "End Create Pair"
@@ -233,7 +242,16 @@ CreatePair1() {
 CreatePair2() {
     echo "================================================="
     echo "Start Create Pair"
-    PARAM_1='{"create_pair": {"asset_infos":[{"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, {"native_token":{"denom":"uusd"}}]}}'
+    PARAM_1='{"create_pair": {"assets":[{"info": {"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, "amount": "0"}, {"info": {"native_token":{"denom":"uusd"}}, "amount": "0"}]}}'
+    printf "y\n" | terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_FACTORY) "$PARAM_1" $WALLET $TXFLAG
+    sleep 5
+    echo "End Create Pair"
+}
+
+CreatePair3() {
+    echo "================================================="
+    echo "Start Create Pair"
+    PARAM_1='{"create_pair": {"assets":[{"info": {"native_token":{"denom":"uluna"}}, "amount": "0"}, {"info": {"native_token":{"denom":"uusd"}}, "amount": "0"}]}}'
     printf "y\n" | terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_FACTORY) "$PARAM_1" $WALLET $TXFLAG
     sleep 5
     echo "End Create Pair"
@@ -243,9 +261,9 @@ CreatePair2() {
 TokenMint() {
     echo "================================================="
     echo "Mint"
-    PARAM_1='{"mint": {"recipient": "terra128a44yv7aa6lr6ee6x8uh9dz80ya4x2kfljqed", "amount": "1000000000000" }}'
-    echo "terrad tx wasm execute "terra1p6et9n7nsqa65a9um38g32ugzt5feaat74x2qm" "$PARAM_1" 10uluna $WALLET $TXFLAG"
-    printf "y\n" | terrad tx wasm execute "terra1p6et9n7nsqa65a9um38g32ugzt5feaat74x2qm" "$PARAM_1" 10uluna $WALLET $TXFLAG
+    PARAM_1='{"mint": {"recipient": "terra17mpk8hxqdp4lz5z9h4stprwtsk4txa6wgxxkv5", "amount": "100000000" }}'
+    echo "terrad tx wasm execute "'$(cat $ADDRESS_DIR$SWAP_TOKEN)'" "$PARAM_1" $WALLET $TXFLAG"
+    printf "y\n" | terrad tx wasm execute "'$(cat $ADDRESS_DIR$SWAP_TOKEN)'" "$PARAM_1" $WALLET $TXFLAG
     sleep 5
 }
 
@@ -274,7 +292,7 @@ Allowance() {
 AddLiquidity() {
     echo "================================================="
     echo "Start Add Liquidity"
-    PARAM_1='{"provide_liquidity": {"assets": [{"info": {"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, "amount": "10000"}, {"info": {"native_token":{"denom":"uluna"}}, "amount": "10"}]}}'
+    PARAM_1='{"provide_liquidity": {"assets": [{"info": {"token":{"contract_addr":"'$(cat $ADDRESS_DIR$SWAP_TOKEN)'"}}, "amount": "10000"}, {"info": {"native_token":{"denom":"uluna"}}, "amount": "10000"}]}}'
     echo "terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_PAIR) "$PARAM_1" 10uluna $WALLET $TXFLAG"
     printf "y\n" | terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_PAIR) "$PARAM_1" 10uluna $WALLET $TXFLAG
     sleep 5
@@ -284,7 +302,9 @@ AddLiquidity() {
 RemoveLiquidity() {
     echo "================================================="
     echo "Start Remove Liquidity"
-    PARAM_1='{"send": {"contract": "'$(cat $ADDRESS_DIR$SWAP_PAIR)'", amount: "10", msg: {}}}'
+    MSG='{"withdraw_liquidity": {}}'
+    ENCODEMSG=$(echo $MSG | base64 -w 0)
+    PARAM_1='{"send": {"contract": "'$(cat $ADDRESS_DIR$SWAP_PAIR)'", amount: "10", msg: "'$ENCODEMSG'"}}'
     PARAM_2='LP_TOKEN'
     echo "terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_PAIR) "$PARAM_1" 10uluna $WALLET $TXFLAG"
     printf "y\n" | terrad tx wasm execute $(cat $ADDRESS_DIR$SWAP_PAIR) "$PARAM_1" 10uluna $WALLET $TXFLAG
@@ -314,3 +334,23 @@ if [[ $FUNCTION == "" ]]; then
 else
     $FUNCTION
 fi
+
+
+##################################################
+# 1. Upload
+#    - Token 
+#    - Pair
+#    - Factory
+#    - Router
+#
+# 2. Instantiate
+#    - Token
+#    - Pair
+#    - Factory
+#    - Router
+#
+# 3. AddNativeTokenDecimal (LUNC, USTC)
+#    Before this, send LUNC, USTC a bit.
+# 4. CreatePair1, CreatePair2, CreatePair3
+#
+##################################################
