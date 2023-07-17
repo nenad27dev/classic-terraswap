@@ -9,8 +9,6 @@ use cw20::Cw20ReceiveMsg;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct InstantiateMsg {
     pub clsm_addr: String,
-    pub minter_addr: String,
-    pub timer_trigger: String,
     pub pair_vest: VestInfo,
     pub nft_vest: VestInfo,
     pub marketing_vest: VestInfo,
@@ -20,17 +18,15 @@ pub struct InstantiateMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ExecuteMsg {
-    MintCLSMToPairContract {},
-    MintCLSMToNFTMinters {},
-    MintCLSMToMarketing {},
-    MintCLSMToMiniGames {},
-    MintCLSMToTeam {},
+pub enum MoonExecuteMsg {
+    VestingMint {},
     DynamicMintFromLunc {
         amount: Uint128,
+        price: Decimal
     },
     DynamicMintFromUstc {
         amount: Uint128,
+        price: Decimal
     },
 }
 
@@ -41,9 +37,6 @@ pub enum Cw20HookMsg {
         amount: Uint128
     },
 }
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
 
 // We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]

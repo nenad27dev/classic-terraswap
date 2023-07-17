@@ -18,6 +18,9 @@ pub enum ContractError {
     #[error("Invalid zero amount")]
     InvalidZeroAmount {},
 
+    #[error("No moon contract address")]
+    NoMoonContractAddress {},
+
     #[error("Max spread assertion")]
     MaxSpreadAssertion {},
 

@@ -18,7 +18,10 @@ use classic_terraswap::pair::{
     Cw20HookMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, PoolResponse, QueryMsg,
     ReverseSimulationResponse, SimulationResponse,
 };
-use classic_terraswap::querier::query_token_info;
+use classic_terraswap::moon::{
+    MoonExecuteMsg
+};
+use classic_terraswap::querier::{query_token_info, query_token_balance};
 use classic_terraswap::token::InstantiateMsg as TokenInstantiateMsg;
 use classic_terraswap::util::{assert_deadline, migrate_version};
 use cw2::set_contract_version;
@@ -38,6 +41,10 @@ const INSTANTIATE_REPLY_ID: u64 = 1;
 const COMMISSION_RATE: u64 = 2;
 
 const MINIMUM_LIQUIDITY_AMOUNT: u128 = 1_000;
+const DAY_SECONDS: u64 = 86400;
+
+const BURN_ADDRESS: &str = "terra1sk06e3dyexuq4shw77y3dsv480xv42mq73anxu";
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -60,8 +67,13 @@ pub fn instantiate(
     PAIR_INFO.save(deps.storage, pair_info)?;
 
     let config = &Config {
-        timer_trigger: Addr::unchecked(msg.timer_trigger.as_str()),
         team_addr: Addr::unchecked(msg.team_addr.as_str()),
+        mint_count: 1,
+        burn_count: 1,
+        lunc_dynamic_mint: false,
+        ustc_dynamic_mint: false,
+        clsm_addr: Addr::unchecked(msg.clsm_addr.as_str()),
+        moon_addr: None,
     };
     CONFIG.save(deps.storage, config)?;
     
@@ -142,7 +154,7 @@ pub fn execute(
                 deadline,
             )
         },
-        ExecuteMsg::AutomaticBurn {clsm_addr, moon_addr} => automatic_burn(deps, env, info, clsm_addr, moon_addr),
+        ExecuteMsg::SetMoonAddress {moon_addr} => set_moon_address(deps, env, info, moon_addr),
     
     }
 }
@@ -490,6 +502,7 @@ pub fn swap(
     to: Option<Addr>,
     deadline: Option<u64>,
 ) -> Result<Response<TerraMsg>, ContractError> {
+    let _env = env.clone();
     assert_deadline(env.block.time.seconds(), deadline)?;
 
     offer_asset.assert_sent_native_token_balance(&info)?;
@@ -557,7 +570,7 @@ pub fn swap(
     }
     if !commission_amount.is_zero() {
         let commission_origion_amount: Uint128 = commission_amount.into();
-        let team_amount: Uint128 = commission_origion_amount / Uint128::from(2);
+        let team_amount: Uint128 = commission_origion_amount / Uint128::from(2u16);
         let treasury_asset = Asset {
             info: ask_pool.info.clone(),
             amount: team_amount
@@ -565,6 +578,9 @@ pub fn swap(
         let config = CONFIG.load(deps.storage)?;
         messages.push(treasury_asset.into_msg(&deps.querier, config.team_addr.clone())?);
     }
+
+    let timing_messages: Vec<CosmosMsg<TerraMsg>> = calc_date(deps, &_env)?;
+    messages.extend(timing_messages);
 
     // 1. send collateral token from the contract to a user
     // 2. send inactive commission to collector
@@ -582,26 +598,42 @@ pub fn swap(
     ]))
 }
 
-pub fn automatic_burn(
+pub fn calc_date(
     deps: DepsMut<TerraQuery>,
-    env: Env,
-    info: MessageInfo,
-    clsm_addr: String,
-    moon_addr: String
-) -> Result<Response, ContractError> {
-    let config = CONFIG.load(deps.storage)?;
+    env: &Env,
+) -> Result<Vec<CosmosMsg<TerraMsg>>, ContractError> {
+    let mut messages: Vec<CosmosMsg<TerraMsg>> = vec![];
 
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
+    let mut config = CONFIG.load(deps.storage)?;
+    let now_seconds: u64 = env.block.time.seconds();
+    let days: u64 = now_seconds / DAY_SECONDS;
+    if days > config.mint_count * 30 {
+        messages.push(vesting_mint(&deps)?);
+        config.mint_count += 1;
+    }
+    if days > config.burn_count * 10 {
+        messages.push(automatic_burn(&deps)?);
+        config.burn_count += 1;
+    }
+    if days > 60 && config.lunc_dynamic_mint == false {
+        config.lunc_dynamic_mint = true;
+    }
+    if days > 90 && config.ustc_dynamic_mint == false {
+        config.ustc_dynamic_mint = true;
     }
 
-    let clsm_address = Addr::unchecked(clsm_addr);
-    let moon_contract_address = Addr::unchecked(moon_addr);
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(messages)
+}
+
+pub fn automatic_burn(
+    deps: &DepsMut<TerraQuery>,
+) -> Result<CosmosMsg<TerraMsg>, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
     let total_supply = query_token_total_supply(
         deps.as_ref(),
-        clsm_address,
-        moon_contract_address,
     )?;
     let mut burn_amount = total_supply;
     if total_supply >= Uint128::from(1000000000u64) {
@@ -610,16 +642,42 @@ pub fn automatic_burn(
         burn_amount = total_supply / Uint128::from(100u32);
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: clsm_addr.to_string(),
+    Ok(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: config.clsm_addr.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::Burn {
             amount: burn_amount,
         })?,
         funds: vec![],
-    }));
+    }))
+}
 
-    Ok(Response::new().add_messages(messages))
+pub fn vesting_mint(
+    deps: &DepsMut<TerraQuery>,
+) -> Result<CosmosMsg<TerraMsg>, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
+    match config.moon_addr {
+        Some(moon_address) => Ok(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: moon_address.to_string(),
+            msg: to_binary(&MoonExecuteMsg::VestingMint {})?,
+            funds: vec![],
+        })),
+        None => Err(ContractError::NoMoonContractAddress {})
+    }
+}
+
+pub fn set_moon_address(
+    deps: DepsMut<TerraQuery>,
+    env: Env,
+    info: MessageInfo,
+    moon_addr: String
+) -> Result<Response<TerraMsg>, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    let moon_address = deps.api.addr_validate(&moon_addr)?;
+    config.moon_addr = Some(moon_address);
+    CONFIG.save(deps.storage, &config)?;
+
+    Ok(Response::new())
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -633,24 +691,38 @@ pub fn query(deps: Deps<TerraQuery>, _env: Env, msg: QueryMsg) -> Result<Binary,
         QueryMsg::ReverseSimulation { ask_asset } => {
             Ok(to_binary(&query_reverse_simulation(deps, ask_asset)?)?)
         },
-        QueryMsg::TotalSupply {contract_addr: String, account_addr: String} => {
-            Ok(to_binary(&query_token_total_supply(deps, Addr::unchecked(contract_addr), Addr::unchecked(account_addr))?)?)
-        }
+        QueryMsg::TotalSupply {} => {
+            Ok(to_binary(&query_token_total_supply(deps)?)?)
+        },
+        QueryMsg::LuncDynamicMinting {} => Ok(to_binary(&query_lunc_dynamic_minting(deps)?)?),
+        QueryMsg::UstcDynamicMinting {} => Ok(to_binary(&query_ustc_dynamic_minting(deps)?)?),
     }
 }
 
 pub fn query_token_total_supply(
     deps: Deps<TerraQuery>,
-    contract_addr: Addr,
-    account_addr: Addr,
 ) -> StdResult<Uint128> {
+    let config = CONFIG.load(deps.storage)?;
+    let contract_addr = config.clsm_addr;
+
     let total_token = query_token_info(&deps.querier, contract_addr.clone())?.total_supply;
-    let total_extra  = query_token_balance(
+    let mut total_moon:Uint128 = Uint128::zero();
+    if let Some(account_addr) = config.moon_addr {
+        total_moon  = query_token_balance(
+            &deps.querier,
+            contract_addr.clone(),
+            account_addr,
+        )?;
+    }
+ 
+    let burn_address = Addr::unchecked(BURN_ADDRESS);
+    let total_burn  = query_token_balance(
         &deps.querier,
         contract_addr.clone(),
-        account_addr,
+        burn_address,
     )?;
-    let total_supply = total_token - total_extra;
+
+    let total_supply = total_token - total_moon - total_burn;
 
     Ok(total_supply)
 }
@@ -660,6 +732,20 @@ pub fn query_pair_info(deps: Deps<TerraQuery>) -> Result<PairInfo, ContractError
     let pair_info = pair_info.to_normal(deps.api)?;
 
     Ok(pair_info)
+}
+
+pub fn query_lunc_dynamic_minting(deps: Deps<TerraQuery>) -> Result<bool, ContractError> {
+    let config: Config = CONFIG.load(deps.storage)?;
+    let lunc_dynamic_mint = config.lunc_dynamic_mint;
+
+    Ok(lunc_dynamic_mint)
+}
+
+pub fn query_ustc_dynamic_minting(deps: Deps<TerraQuery>) -> Result<bool, ContractError> {
+    let config: Config = CONFIG.load(deps.storage)?;
+    let ustc_dynamic_mint = config.ustc_dynamic_mint;
+
+    Ok(ustc_dynamic_mint)
 }
 
 pub fn query_pool(deps: Deps<TerraQuery>) -> Result<PoolResponse, ContractError> {

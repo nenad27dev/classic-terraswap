@@ -47,6 +47,7 @@ pub fn instantiate(
         owner: deps.api.addr_canonicalize(info.sender.as_str())?,
         token_code_id: msg.token_code_id,
         pair_code_id: msg.pair_code_id,
+        clsm_addr: deps.api.addr_canonicalize(msg.clsm_addr.as_str())?,
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -186,6 +187,7 @@ pub fn execute_create_pair(
                     token_code_id: config.token_code_id,
                     asset_decimals,
                     team_addr,
+                    clsm_addr: config.clsm_addr.to_string()
                 })?,
             }),
             reply_on: ReplyOn::Success,

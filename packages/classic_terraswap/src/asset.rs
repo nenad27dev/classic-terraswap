@@ -367,8 +367,6 @@ pub struct VestInfoRaw {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct MoonInfoRaw {
     pub clsm_addr: CanonicalAddr,
-    pub minter_addr: CanonicalAddr,
-    pub timer_trigger: CanonicalAddr,
     pub pair_vest: VestInfoRaw,
     pub nft_vest: VestInfoRaw,
     pub marketing_vest: VestInfoRaw,

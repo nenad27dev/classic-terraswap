@@ -12,14 +12,14 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     from_binary, to_binary, Addr, Binary, CanonicalAddr, CosmosMsg, Decimal, Decimal256, Deps,
     DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdError, StdResult, SubMsg, Uint128,
-    Uint256, WasmMsg,
+    Uint256, WasmMsg, WasmQuery
 };
 
 use classic_bindings::{TerraMsg, TerraQuery};
 
 use classic_terraswap::asset::{Asset, AssetInfo, MoonInfo, MoonInfoRaw, VestInfo, VestInfoRaw};
 use classic_terraswap::moon::{
-    Cw20HookMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, PoolResponse, QueryMsg,
+    Cw20HookMsg, MoonExecuteMsg, InstantiateMsg, MigrateMsg, PoolResponse,
     ReverseSimulationResponse, SimulationResponse,
 };
 use classic_terraswap::querier::query_token_info;
@@ -43,7 +43,7 @@ const COMMISSION_RATE: u64 = 3;
 
 const MINIMUM_LIQUIDITY_AMOUNT: u128 = 1_000;
 
-const BURN_ADDRESS: String = "terra1sk06e3dyexuq4shw77y3dsv480xv42mq73anxu";
+const BURN_ADDRESS: &str = "terra1sk06e3dyexuq4shw77y3dsv480xv42mq73anxu";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -95,8 +95,6 @@ pub fn instantiate(
 
     let moon_config: &MoonInfoRaw = &MoonInfoRaw {
         clsm_addr: deps.api.addr_canonicalize(&msg.clsm_addr.as_str())?,
-        minter_addr: deps.api.addr_canonicalize(&msg.minter_addr.as_str())?,
-        timer_trigger: deps.api.addr_canonicalize(&msg.timer_trigger.as_str())?,
         pair_vest: pair_vesting,
         nft_vest: nft_vesting,
         marketing_vest: marketing_vesting,
@@ -113,31 +111,41 @@ pub fn execute(
     deps: DepsMut<TerraQuery>,
     env: Env,
     info: MessageInfo,
-    msg: ExecuteMsg,
+    msg: MoonExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::MintCLSMToPairContract {} => emission2pair_contract(deps, env, info),
-        ExecuteMsg::MintCLSMToNFTMinters {} => emission2nft_minter(deps, env, info),
-        ExecuteMsg::MintCLSMToMarketing {} => emission2marketing(deps, env, info),
-        ExecuteMsg::MintCLSMToMiniGames {} => emission2minigames(deps, env, info),
-        ExecuteMsg::MintCLSMToTeam {} => emission2team(deps, env, info),
-        ExecuteMsg::DynamicMintFromLunc { amount } => send_lunc(amount),
-        ExecuteMsg::DynamicMintFromUstc { amount } => send_ustc(amount),
+        MoonExecuteMsg::VestingMint {} => vesting_mint(deps, env, info),
+        MoonExecuteMsg::DynamicMintFromLunc { amount, price } => lunc_dynamic_mint(deps, &env, info, amount, price),
+        MoonExecuteMsg::DynamicMintFromUstc { amount, price } => ustc_dynamic_mint(deps, &env, info, amount, price),
     }
 }
 
-pub fn emission2pair_contract(
+pub fn vesting_mint(
     deps: DepsMut<TerraQuery>,
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    let mut messages: Vec<CosmosMsg> = vec![];
+
     let mut moon_config = MOON_CONFIG.load(deps.storage)?;
 
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != moon_config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
-    }
+    messages.push(emission2pair_contract(&deps, &env, &info, & mut moon_config)?);
+    messages.push(emission2nft_minter(&deps, &env, &info, & mut moon_config)?);
+    messages.push(emission2marketing(&deps, &env, &info, & mut moon_config)?);
+    messages.push(emission2minigames(&deps, &env, &info, & mut moon_config)?);
+    messages.push(emission2team(&deps, &env, &info, & mut moon_config)?);
 
+    MOON_CONFIG.save(deps.storage, &moon_config)?;
+
+    Ok(Response::new().add_messages(messages))
+}
+
+pub fn emission2pair_contract(
+    deps: &DepsMut<TerraQuery>,
+    env: &Env,
+    info: &MessageInfo,
+    moon_config:& mut MoonInfoRaw,
+) -> Result<CosmosMsg, ContractError> {
     let clsm_addr = moon_config.clsm_addr.clone();
     let pair_contract_address = moon_config.pair_vest.address.clone();
     let pair_contract_monthly_amount = moon_config.pair_vest.monthly_amount;
@@ -158,31 +166,21 @@ pub fn emission2pair_contract(
         return Err(ContractError::LessThanVesting {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
+    moon_config.pair_vest.month_index = pair_contract_month_index + Uint128::from(1 as u8);
+
+    Ok(util::transfer_token_message(
         Denom::Cw20(deps.api.addr_humanize(&clsm_addr)?),
         pair_contract_monthly_amount,
         deps.api.addr_humanize(&pair_contract_address)?,
-    )?);
-
-    moon_config.pair_vest.month_index = pair_contract_month_index + Uint128::from(1 as u8);
-    MOON_CONFIG.save(deps.storage, &moon_config)?;
-
-    Ok(Response::new().add_messages(messages))
+    )?)
 }
 
 pub fn emission2nft_minter(
-    deps: DepsMut<TerraQuery>,
-    env: Env,
-    info: MessageInfo,
-) -> Result<Response, ContractError> {
-    let mut moon_config = MOON_CONFIG.load(deps.storage)?;
-
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != moon_config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
-    }
-
+    deps: &DepsMut<TerraQuery>,
+    env: &Env,
+    info: &MessageInfo,
+    moon_config: & mut MoonInfoRaw,
+) -> Result<CosmosMsg, ContractError> {
     let clsm_addr = moon_config.clsm_addr.clone();
     let nft_minter_address = moon_config.nft_vest.address.clone();
     let nft_minter_monthly_amount = moon_config.nft_vest.monthly_amount;
@@ -203,31 +201,32 @@ pub fn emission2nft_minter(
         return Err(ContractError::LessThanVesting {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
+    // let all_nfts = WasmQuery::Smart {
+    //     contract_addr: nft_minter_address,
+    //     msg: to_binary(&QueryMsg::AllNftInfo { start_from: None, limit: None })?,
+    // };
+    // let all_nfts_response: AllNftInfoResponse = deps.querier.query(&all_nfts)?;
+    // let owners = all_nfts_response
+    //     .nfts
+    //     .into_iter()
+    //     .map(|nft_info| nft_info.owner)
+    //     .collect();
+
+    moon_config.nft_vest.month_index = nft_minter_month_index + Uint128::from(1 as u8);
+
+    Ok(util::transfer_token_message(
         Denom::Cw20(deps.api.addr_humanize(&clsm_addr)?),
         nft_minter_monthly_amount,
         deps.api.addr_humanize(&nft_minter_address)?,
-    )?);
-
-    moon_config.nft_vest.month_index = nft_minter_month_index + Uint128::from(1 as u8);
-    MOON_CONFIG.save(deps.storage, &moon_config)?;
-
-    Ok(Response::new().add_messages(messages))
+    )?)
 }
 
 pub fn emission2marketing(
-    deps: DepsMut<TerraQuery>,
-    env: Env,
-    info: MessageInfo,
-) -> Result<Response, ContractError> {
-    let mut moon_config = MOON_CONFIG.load(deps.storage)?;
-
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != moon_config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
-    }
-
+    deps: &DepsMut<TerraQuery>,
+    env: &Env,
+    info: &MessageInfo,
+    moon_config: & mut MoonInfoRaw,
+) -> Result<CosmosMsg, ContractError> {
     let clsm_addr = moon_config.clsm_addr.clone();
     let marketing_address = moon_config.marketing_vest.address.clone();
     let marketing_monthly_amount = moon_config.marketing_vest.monthly_amount;
@@ -248,31 +247,21 @@ pub fn emission2marketing(
         return Err(ContractError::LessThanVesting {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
+    moon_config.marketing_vest.month_index = marketing_month_index + Uint128::from(1 as u8);
+
+    Ok(util::transfer_token_message(
         Denom::Cw20(deps.api.addr_humanize(&clsm_addr)?),
         marketing_monthly_amount,
         deps.api.addr_humanize(&marketing_address)?,
-    )?);
-
-    moon_config.marketing_vest.month_index = marketing_month_index + Uint128::from(1 as u8);
-    MOON_CONFIG.save(deps.storage, &moon_config)?;
-
-    Ok(Response::new().add_messages(messages))
+    )?)
 }
 
 pub fn emission2minigames(
-    deps: DepsMut<TerraQuery>,
-    env: Env,
-    info: MessageInfo,
-) -> Result<Response, ContractError> {
-    let mut moon_config = MOON_CONFIG.load(deps.storage)?;
-
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != moon_config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
-    }
-
+    deps: &DepsMut<TerraQuery>,
+    env: &Env,
+    info: &MessageInfo,
+    moon_config: & mut MoonInfoRaw,
+) -> Result<CosmosMsg, ContractError> {
     let clsm_addr = moon_config.clsm_addr.clone();
     let game_address = moon_config.game_vest.address.clone();
     let game_monthly_amount = moon_config.game_vest.monthly_amount;
@@ -293,31 +282,21 @@ pub fn emission2minigames(
         return Err(ContractError::LessThanVesting {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
+    moon_config.game_vest.month_index = game_month_index + Uint128::from(1 as u8);
+
+    Ok(util::transfer_token_message(
         Denom::Cw20(deps.api.addr_humanize(&clsm_addr)?),
         game_monthly_amount,
         deps.api.addr_humanize(&game_address)?,
-    )?);
-
-    moon_config.game_vest.month_index = game_month_index + Uint128::from(1 as u8);
-    MOON_CONFIG.save(deps.storage, &moon_config)?;
-
-    Ok(Response::new().add_messages(messages))
+    )?)
 }
 
 pub fn emission2team(
-    deps: DepsMut<TerraQuery>,
-    env: Env,
-    info: MessageInfo,
-) -> Result<Response, ContractError> {
-    let mut moon_config = MOON_CONFIG.load(deps.storage)?;
-
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != moon_config.timer_trigger {
-        return Err(ContractError::Unauthorized {});
-    }
-
+    deps: &DepsMut<TerraQuery>,
+    env: &Env,
+    info: &MessageInfo,
+    moon_config: & mut MoonInfoRaw,
+) -> Result<CosmosMsg, ContractError> {
     let clsm_addr = moon_config.clsm_addr.clone();
     let team_address = moon_config.team_vest.address.clone();
     let team_monthly_amount = moon_config.team_vest.monthly_amount;
@@ -338,39 +317,71 @@ pub fn emission2team(
         return Err(ContractError::LessThanVesting {});
     }
 
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(util::transfer_token_message(
+    moon_config.team_vest.month_index = team_month_index + Uint128::from(1 as u8);
+
+    Ok(util::transfer_token_message(
         Denom::Cw20(deps.api.addr_humanize(&clsm_addr)?),
         team_monthly_amount,
         deps.api.addr_humanize(&team_address)?,
-    )?);
-
-    moon_config.team_vest.month_index = team_month_index + Uint128::from(1 as u8);
-    MOON_CONFIG.save(deps.storage, &moon_config)?;
-
-    Ok(Response::new().add_messages(messages))
+    )?)
 }
 
-pub fn send_lunc (amount: Uint128
+pub fn lunc_dynamic_mint (
+    deps: DepsMut<TerraQuery>,
+    env: &Env,
+    info: MessageInfo,
+    amount: Uint128,
+    price: Decimal
 ) -> Result<Response, ContractError> {
+    let moon_config = MOON_CONFIG.load(deps.storage)?;
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(util::transfer_token_message(
-        Denom::Native("uluna"),
+        Denom::Native(String::from("uluna")),
         amount,
         Addr::unchecked(BURN_ADDRESS)
     )?);
 
+    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: deps
+            .api
+            .addr_humanize(&moon_config.clsm_addr)?
+            .to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Mint {
+            recipient: info.sender.to_string(),
+            amount: amount * price,
+        })?,
+        funds: vec![],
+    }));
+
     Ok(Response::new().add_messages(messages))
 }
 
-pub fn send_ustc (amount: Uint128
+pub fn ustc_dynamic_mint (
+    deps: DepsMut<TerraQuery>,
+    env: &Env,
+    info: MessageInfo,
+    amount: Uint128,
+    price: Decimal
 ) -> Result<Response, ContractError> {
+    let moon_config = MOON_CONFIG.load(deps.storage)?;
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(util::transfer_token_message(
-        Denom::Native("uusd"),
+        Denom::Native(String::from("uusd")),
         amount,
         Addr::unchecked(BURN_ADDRESS)
     )?);
+
+    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: deps
+            .api
+            .addr_humanize(&moon_config.clsm_addr)?
+            .to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Mint {
+            recipient: info.sender.to_string(),
+            amount: amount * price,
+        })?,
+        funds: vec![],
+    }));
 
     Ok(Response::new().add_messages(messages))
 }
